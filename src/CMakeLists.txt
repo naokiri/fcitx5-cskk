@@ -5,7 +5,7 @@ add_library(fcitx5-cskk MODULE ${CSKK_SOURCES})
 target_link_libraries(fcitx5-cskk
         Fcitx5::Core
         Fcitx5::Config
-        ${LIBCSKK_LIBRARIES}
+        ${LIBCSKK_LDFLAGS}
         )
 set_target_properties(fcitx5-cskk PROPERTIES PREFIX "")
 install(TARGETS fcitx5-cskk DESTINATION "${CMAKE_INSTALL_LIBDIR}/fcitx5")
