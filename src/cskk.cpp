@@ -96,89 +96,48 @@ void FcitxCskkEngine::reloadConfig() {
   }
 }
 void FcitxCskkEngine::loadDictionary() {
+  // For time being, just load files from XDG_DATA_{HOME,DIRS} only.
   freeDictionaries();
-
+  CSKK_DEBUG() << "Start loading dictionaries";
   const std::filesystem::directory_options directoryOptions =
       (std::filesystem::directory_options::skip_permission_denied |
        std::filesystem::directory_options::follow_directory_symlink);
 
-  // For time being, just load files from XDG_DATA_{HOME,DIRS} only.
-  try {
-    std::filesystem::path dataDir = getXDGDataHome();
-    dataDir.append("fcitx5-cskk/dictionary");
-    CSKK_DEBUG() << dataDir;
-    // TODO: Use string::ends_with when fcitx5 family uses C++20.
-    for (const auto &file :
-         std::filesystem::directory_iterator(dataDir, directoryOptions)) {
-      if (file.is_regular_file()) {
-        auto path = file.path().string();
-        if (path.length() > 5) {
-          if (path.compare(path.length() - 5, 5, ".dict") == 0) {
-            dictionaries_.emplace_back(
-                skk_user_dict_new(file.path().c_str(), "UTF-8"));
+  const auto &standardPath = StandardPath::global();
+  std::string path;
+  auto templatePath = "fcitx5-cskk/dictionary";
+  standardPath.scanDirectories(
+      StandardPath::Type::Data,
+      [this, &templatePath](const std::string &dirPath, bool isUser) {
+        auto dataDir = stringutils::joinPath(dirPath, templatePath);
+        CSKK_DEBUG() << "Search " << dataDir << " for dicts";
+        try {
+          for (const auto &file :
+               std::filesystem::directory_iterator(dataDir, directoryOptions)) {
+            if (file.is_regular_file()) {
+              if (isUser) {
+                auto path = file.path().string();
+                if (path.length() > 5) {
+                  if (path.compare(path.length() - 5, 5, ".dict") == 0) {
+                    dictionaries_.emplace_back(
+                        skk_user_dict_new(file.path().c_str(), "UTF-8"));
+                    CSKK_DEBUG() << "Register " << file << " as r/w dict";
+                  }
+                }
+              } else {
+                dictionaries_.emplace_back(
+                    skk_file_dict_new(file.path().c_str(), "UTF-8"));
+                CSKK_DEBUG() << "Register " << file << " as static dict";
+              }
+            }
           }
+        } catch (std::filesystem::filesystem_error &ignored) {
+          CSKK_WARN() << "Attempt to read dictionary failed. Skipping.";
         }
-      }
-    }
-  } catch (std::filesystem::filesystem_error &ignored) {
-    CSKK_WARN() << "Read userdictionary failed. Skipping.";
-  }
-
-  std::vector<string> xdgDataDirs = getXDGDataDirs();
-
-  for (const auto &xdgDataDir : xdgDataDirs) {
-    std::filesystem::path dataDir = xdgDataDir;
-    dataDir.append("fcitx5-cskk/dictionary");
-    CSKK_DEBUG() << dataDir;
-    try {
-      for (const auto &file :
-           std::filesystem::directory_iterator(dataDir, directoryOptions)) {
-        if (file.is_regular_file()) {
-          dictionaries_.emplace_back(
-              skk_file_dict_new(file.path().c_str(), "UTF-8"));
-        }
-      }
-    } catch (std::filesystem::filesystem_error &ignored) {
-      CSKK_WARN() << "Read static dictionary failed. Skipping.";
-    }
-  }
-}
-std::string FcitxCskkEngine::getXDGDataHome() {
-  const char *xdgDataHomeEnv = getenv("XDG_DATA_HOME");
-  const char *homeEnv = getenv("HOME");
-  if (xdgDataHomeEnv && strlen(xdgDataHomeEnv) > 0) {
-    return string(xdgDataHomeEnv);
-  } else if (homeEnv) {
-    return string(homeEnv) + "/.local/share";
-  }
-  return "";
+        return true;
+      });
 }
 
-std::vector<std::string> FcitxCskkEngine::getXDGDataDirs() {
-  const char *xdgDataDirEnv = getenv("XDG_DATA_DIRS");
-  string rawDirs;
-
-  if (xdgDataDirEnv && strlen(xdgDataDirEnv) > 0) {
-    rawDirs = string(xdgDataDirEnv);
-  } else {
-    rawDirs = "/usr/local/share:/usr/share";
-  }
-
-  std::vector<string> xdgDataDirs;
-  auto offset = 0;
-  while (true) {
-    auto pos = rawDirs.find(':', offset);
-
-    if (pos == std::string::npos) {
-      xdgDataDirs.emplace_back(rawDirs.substr(offset));
-      break;
-    }
-    xdgDataDirs.emplace_back(rawDirs.substr(offset, pos - offset));
-    offset = pos + 1;
-  }
-  CSKK_DEBUG() << xdgDataDirs;
-  return xdgDataDirs;
-}
 void FcitxCskkEngine::freeDictionaries() {
   CSKK_DEBUG() << "Cskk free dict";
   for (auto dictionary : dictionaries_) {
